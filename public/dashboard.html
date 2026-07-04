@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>TUNNEL MONITOR // open-tunnel</title>
+<style>
+/* ===== RESET & FONTS ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#050a0f;
+  --green:#33ff88;
+  --green-dim:#185533;
+  --green-lit:#88ffbb;
+  --cyan:#33ddee;
+  --cyan-dim:#185566;
+  --amber:#ffbb33;
+  --amber-dim:#664a18;
+  --red:#ff3344;
+  --red-lit:#ff6677;
+  --muted:#2a4a3a;
+  --ink:#c8e6d5;
+  --border:rgba(51,255,136,.25);
+  --font:'Courier New',Consolas,monospace;
+}
+
+body{
+  font-family:var(--font);background:var(--bg);color:var(--green);
+  min-height:100vh;overflow-x:hidden;
+  -webkit-font-smoothing:none;-moz-osx-font-smoothing:unset;font-smooth:never;
+  text-shadow:0 0 2px rgba(51,255,136,.3);
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);
+  pointer-events:none;z-index:999;
+}
+body::after{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.07) 2px,rgba(0,0,0,.07) 4px);
+  pointer-events:none;z-index:998;
+}
+.bg-grid{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(51,255,136,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(51,255,136,.025) 1px,transparent 1px);
+  background-size:16px 16px;
+}
+
+/* ===== DATA STREAM BACKGROUND ===== */
+.data-stream-bg{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  image-rendering:pixelated;
+  opacity:.45;
+}
+
+/* ===== CONTAINER ===== */
+.container{position:relative;z-index:1;max-width:1040px;margin:0 auto;padding:20px 16px 40px}
+
+/* ===== HEADER ===== */
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 20px;margin-bottom:16px;background:var(--bg);
+  border:2px solid var(--green-dim);position:relative;
+}
+.header::after{
+  content:'';position:absolute;inset:-4px;border:1px solid rgba(51,255,136,.08);pointer-events:none;
+}
+.header-left h1{font-size:18px;letter-spacing:3px;color:var(--green);text-shadow:0 0 6px rgba(51,255,136,.4)}
+.header-left .tagline{font-size:10px;color:var(--muted);letter-spacing:2px;margin-top:2px}
+.header-right{text-align:right;display:flex;align-items:center;gap:16px}
+.status-row{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:1px}
+.status-dot{width:8px;height:8px;border-radius:1px;transition:background .3s,box-shadow .3s}
+.face-canvas{image-rendering:pixelated;width:48px;height:48px;flex-shrink:0;transition:filter .5s}
+.face-canvas.happy{filter:drop-shadow(0 0 6px rgba(51,255,136,.5))}
+.face-canvas.sad{filter:drop-shadow(0 0 6px rgba(255,51,68,.5))}
+.status-dot.online{background:var(--green);box-shadow:0 0 6px var(--green),0 0 12px rgba(51,255,136,.4);animation:pulse-dot 2s infinite}
+.status-dot.offline{background:var(--red);box-shadow:0 0 6px var(--red)}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.25}}
+.elapsed{font-size:10px;color:var(--muted);letter-spacing:1px}
+
+/* ===== MAIN LAYOUT ===== */
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+
+/* ===== PIXEL PANEL ===== */
+.pixel-panel{
+  background:var(--bg);border:2px solid var(--green-dim);padding:16px;position:relative;
+}
+.pixel-panel::before{
+  content:'';position:absolute;top:-2px;left:-2px;
+  width:8px;height:8px;border-right:2px solid var(--green-dim);border-bottom:2px solid var(--green-dim);pointer-events:none;
+}
+.pixel-panel::after{
+  content:'';position:absolute;bottom:-2px;right:-2px;
+  width:8px;height:8px;border-left:2px solid var(--green-dim);border-top:2px solid var(--green-dim);pointer-events:none;
+}
+.pixel-title{
+  font-size:10px;color:var(--muted);letter-spacing:2px;
+  padding-bottom:10px;margin-bottom:12px;border-bottom:2px dotted rgba(51,255,136,.15);
+  display:flex;align-items:center;gap:6px;
+}
+.pixel-title .mark{color:var(--green);font-size:12px}
+.pixel-title .blink{animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ===== STATS 2x2 ===== */
+.stats-2x2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.stat-cell{
+  background:rgba(51,255,136,.03);border:1px solid var(--border);
+  padding:12px 14px;text-align:center;position:relative;
+}
+.stat-cell .num{font-size:22px;font-weight:bold;line-height:1.1}
+.stat-cell .num.green{color:var(--green);text-shadow:0 0 4px rgba(51,255,136,.4)}
+.stat-cell .num.cyan{color:var(--cyan);text-shadow:0 0 4px rgba(51,221,238,.4)}
+.stat-cell .num.amber{color:var(--amber);text-shadow:0 0 4px rgba(255,187,51,.4)}
+.stat-cell .lbl{font-size:9px;color:var(--muted);letter-spacing:1px;margin-top:4px}
+
+/* ===== TIMER ===== */
+.timer-box{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px}
+.timer-display{font-size:2.8rem;font-weight:bold;letter-spacing:4px;color:var(--cyan);text-shadow:0 0 12px rgba(51,221,238,.3),0 0 30px rgba(51,221,238,.08);font-variant-numeric:tabular-nums;line-height:1}
+.timer-label{font-size:9px;color:var(--muted);letter-spacing:3px;margin-top:8px}
+
+/* ===== TUNNEL INFO ===== */
+.info-stack{display:flex;flex-direction:column;gap:8px}
+.info-item{display:flex;justify-content:space-between;align-items:center;gap:7px}
+.info-lbl{font-size:9px;color:var(--muted);letter-spacing:1px;flex-shrink:0}
+.info-val{font-size:11px;color:var(--green);text-align:right;word-break:break-all;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.info-sep{border:none;border-top:2px dotted rgba(51,255,136,.1);margin:2px 0}
+
+/* ===== QR ===== */
+.qr-section{display:flex;gap:14px;align-items:stretch;margin-top:12px}
+.qr-frame{flex-shrink:0;width:160px;height:160px;background:rgba(0,0,0,.4);border:2px solid var(--green-dim);display:flex;align-items:center;justify-content:center;position:relative}
+.qr-frame::before{content:'';position:absolute;inset:4px;border:1px solid rgba(51,255,136,.08);pointer-events:none}
+.qr-frame img{width:140px;height:140px;display:block;image-rendering:pixelated}
+.qr-placeholder{color:var(--muted);font-size:9px;text-align:center;letter-spacing:1px;line-height:1.8}
+.qr-right{flex:1;display:flex;flex-direction:column;gap:6px;justify-content:center;min-width:0}
+.qr-url-text{font-size:10px;color:var(--green);word-break:break-all;line-height:1.4;padding:8px;background:rgba(0,0,0,.3);border:1px solid var(--border);min-height:36px}
+
+/* ===== NES BUTTONS ===== */
+.btn{all:unset;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:1px;padding:5px 12px;text-align:center;background:var(--bg);color:var(--green);border:2px solid var(--green-dim);position:relative;transition:none}
+.btn::after{content:'';position:absolute;bottom:-3px;right:-3px;width:100%;height:100%;border:2px solid var(--border);pointer-events:none;z-index:-1}
+.btn:hover{background:rgba(51,255,136,.08);border-color:var(--green)}
+.btn:active{transform:translate(1px,1px)}
+.btn:active::after{display:none}
+.btn-pressed{background:rgba(51,255,136,.15);border-color:var(--green)}
+.btn-danger{border-color:rgba(255,51,68,.3);color:var(--red)}
+.btn-danger:hover{background:rgba(255,51,68,.08);border-color:var(--red)}
+.btn-tiny{font-size:8px;padding:3px 8px;letter-spacing:0}
+
+/* ===== DATA PANEL 3-COL ===== */
+.data-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+
+.metric-widget{
+  background:var(--bg);border:2px solid var(--green-dim);padding:14px;
+  position:relative;
+}
+.metric-widget::before{
+  content:'';position:absolute;top:-2px;left:-2px;
+  width:6px;height:6px;border-right:2px solid var(--green-dim);border-bottom:2px solid var(--green-dim);pointer-events:none;
+}
+.metric-widget::after{
+  content:'';position:absolute;bottom:-2px;right:-2px;
+  width:6px;height:6px;border-left:2px solid var(--green-dim);border-top:2px solid var(--green-dim);pointer-events:none;
+}
+.metric-title{font-size:9px;color:var(--muted);letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;gap:5px}
+.metric-title .mark{color:var(--green);font-size:10px}
+.metric-value{font-size:20px;font-weight:bold;margin-bottom:2px}
+.metric-value.green{color:var(--green)}
+.metric-value.cyan{color:var(--cyan)}
+.metric-value.amber{color:var(--amber)}
+.metric-sub{font-size:8px;color:var(--muted);letter-spacing:1px}
+
+/* Sparkline canvas */
+.spark-canvas{width:100%;height:60px;image-rendering:pixelated;background:rgba(0,0,0,.3);border:1px solid var(--border);margin-bottom:4px}
+
+/* Bar chart (CSS) */
+.bar-chart{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.bar-row{display:flex;align-items:center;gap:6px;font-size:9px}
+.bar-lbl{width:36px;text-align:right;color:var(--muted);flex-shrink:0}
+.bar-track{flex:1;height:10px;background:rgba(0,0,0,.3);border:1px solid rgba(51,255,136,.06);position:relative}
+.bar-fill{position:absolute;top:0;left:0;height:100%;border:1px solid}
+.bar-fill.green{background:rgba(51,255,136,.25);border-color:rgba(51,255,136,.5)}
+.bar-fill.amber{background:rgba(255,187,51,.25);border-color:rgba(255,187,51,.5)}
+.bar-fill.red{background:rgba(255,51,68,.25);border-color:rgba(255,51,68,.5)}
+.bar-fill.cyan{background:rgba(51,221,238,.25);border-color:rgba(51,221,238,.5)}
+.bar-val{width:30px;text-align:right;color:var(--muted);flex-shrink:0;font-size:8px}
+
+/* Stacked bar */
+.stacked-bar{display:flex;height:14px;margin-top:6px;gap:1px}
+.stack-seg{height:100%;border:1px solid rgba(0,0,0,.3)}
+.stack-seg.s2{background:rgba(51,255,136,.5);border-color:var(--green)}
+.stack-seg.s3{background:rgba(51,221,238,.4);border-color:var(--cyan)}
+.stack-seg.s4{background:rgba(255,187,51,.4);border-color:var(--amber)}
+.stack-seg.s5{background:rgba(255,51,68,.4);border-color:var(--red)}
+.stack-legend{display:flex;gap:10px;margin-top:4px;font-size:8px;color:var(--muted);letter-spacing:1px}
+
+/* Stability strip */
+.stability-strip{
+  width:100%;height:24px;background:rgba(0,0,0,.3);border:1px solid var(--border);
+  position:relative;overflow:hidden;margin-top:6px;
+}
+.stability-seg{position:absolute;top:0;height:100%}
+.stability-seg.on{background:rgba(51,255,136,.3);border-right:1px solid var(--green)}
+.stability-seg.off{background:rgba(255,51,68,.2);border-right:1px solid var(--red-dim)}
+
+/* Top paths table */
+.path-table{font-size:9px;width:100%;border-collapse:collapse;margin-top:6px}
+.path-table td{padding:3px 4px;border-bottom:1px solid rgba(51,255,136,.06)}
+.path-table .path-cell{color:var(--cyan);word-break:break-all;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.path-table .count-cell{text-align:right;color:var(--green);width:36px}
+
+/* ===== FULL SECTIONS ===== */
+.full-section{margin-bottom:12px}
+
+/* ===== GANTT ===== */
+.gantt-container{border:1px solid var(--border);padding:12px 14px;min-height:120px;max-height:300px;overflow-y:auto;background:rgba(0,0,0,.2);font-size:10px}
+.gantt-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.gantt-time{color:var(--muted);width:65px;flex-shrink:0;text-align:right;font-size:9px}
+.gantt-bar-wrap{flex:1;height:10px;background:rgba(0,0,0,.3);position:relative;border:1px solid rgba(51,255,136,.06)}
+.gantt-bar{position:absolute;top:0;height:100%}
+.gantt-bar.req-200{background:rgba(51,255,136,.2);border:1px solid rgba(51,255,136,.4)}
+.gantt-bar.req-error{background:rgba(255,51,68,.2);border:1px solid rgba(255,51,68,.4)}
+.gantt-label{color:var(--muted);width:50px;flex-shrink:0;font-size:8px;text-align:center}
+.gantt-legend{display:flex;gap:14px;margin-top:6px;font-size:8px;color:var(--muted);letter-spacing:1px}
+.gantt-legend .dot{width:6px;height:6px;display:inline-block;vertical-align:middle;margin-right:3px}
+.gantt-legend .dot.ok{background:rgba(51,255,136,.4);border:1px solid rgba(51,255,136,.6)}
+.gantt-legend .dot.err{background:rgba(255,51,68,.4);border:1px solid rgba(255,51,68,.6)}
+
+/* ===== LOG ===== */
+.log-container{border:1px solid var(--border);padding:10px 14px;font-size:10px;max-height:200px;overflow-y:auto;font-family:var(--font);line-height:1.9;background:rgba(0,0,0,.2)}
+.log-line{color:var(--muted)}
+.log-line .ts{color:rgba(51,255,136,.2);margin-right:6px}
+.log-line .method{color:var(--cyan);margin-right:6px}
+.log-line .path{color:rgba(51,255,136,.6)}
+.log-line .status-ok{color:var(--green);font-weight:bold}
+.log-line .status-err{color:var(--red-lit);font-weight:bold}
+
+/* ===== PORT EDITOR ===== */
+.port-row{display:flex;gap:4px;align-items:center;margin-top:8px}
+.pixel-input{width:70px;background:rgba(0,0,0,.4);border:2px solid var(--border);color:var(--green);font-family:var(--font);font-size:11px;padding:4px 7px;outline:none;text-align:center;-moz-appearance:textfield}
+.pixel-input::-webkit-inner-spin-button,.pixel-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.pixel-input:focus{border-color:var(--cyan);box-shadow:0 0 4px rgba(51,221,238,.15)}
+.port-msg{font-size:9px;letter-spacing:1px;margin-left:4px}
+
+/* ===== FOOTER ===== */
+.footer{text-align:center;padding:16px 0 0;font-size:8px;color:rgba(51,255,136,.15);letter-spacing:2px}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent;border-left:1px solid rgba(51,255,136,.05)}
+::-webkit-scrollbar-thumb{background:var(--green-dim);border:1px solid var(--border)}
+::-webkit-scrollbar-thumb:hover{background:var(--green)}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:800px){
+  .main-grid,.data-grid{grid-template-columns:1fr}
+  .qr-section{flex-direction:column;align-items:center}
+  .qr-frame{width:140px;height:140px}
+  .qr-frame img{width:120px;height:120px}
+  .header{flex-direction:column;gap:8px;text-align:center}
+  .header-left h1{font-size:16px}
+  .timer-display{font-size:2.2rem}
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<canvas id="dataStream" class="data-stream-bg"></canvas>
+
+<div class="container">
+  <!-- ===== HEADER ===== -->
+  <div class="header">
+    <div class="header-left">
+      <h1>TUNNEL MONITOR</h1>
+      <div class="tagline">open-tunnel // retro-sci // pixel protocol</div>
+    </div>
+    <div class="header-right">
+      <div class="status-row">
+        <canvas id="pixelFace" width="64" height="64" class="face-canvas"></canvas>
+        <div class="status-dot online" id="statusDot"></div>
+        <span id="statusText">ONLINE</span>
+      </div>
+      <div class="elapsed" id="elapsedText">T+ 00:00:00</div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN GRID (TIMER + STATS | TUNNEL INFO + QR) ===== -->
+  <div class="main-grid">
+    <div class="pixel-panel">
+      <div class="pixel-title"><span class="mark">&#9632;</span> MISSION STATUS</div>
+      <div class="timer-box">
+        <div class="timer-display" id="timer">00:00:00</div>
+        <div class="timer-label">ELAPSED TIME</div>
+      </div>
+      <div class="stats-2x2">
+        <div class="stat-cell">
+          <div class="num green" id="stRequests">0</div>
+          <div class="lbl">REQUESTS</div>
+        </div>
+        <div class="stat-cell">
+          <div class="num cyan" id="stSuccess">--</div>
+          <div class="lbl">SUCCESS RATE</div>
+        </div>
+        <div class="stat-cell">
+          <div class="num amber" id="stLatency">--</div>
+          <div class="lbl">AVG LATENCY</div>
+        </div>
+        <div class="stat-cell">
+          <div class="num green" id="stConns">0</div>
+          <div class="lbl">CONNECTIONS</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pixel-panel">
+      <div class="pixel-title"><span class="mark">&#9632;</span> TUNNEL ENDPOINT</div>
+      <div class="info-stack">
+        <div class="info-item">
+          <span class="info-lbl">TARGET</span>
+          <span class="info-val" id="infoLocal" style="font-size:12px">--</span>
+        </div>
+        <hr class="info-sep">
+        <div class="info-item">
+          <span class="info-lbl">PUBLIC</span>
+          <span class="info-val" id="infoUrl" style="font-size:10px;max-width:280px">-- // connecting</span>
+        </div>
+      </div>
+      <div class="port-row" id="portEditor" style="display:none">
+        <input id="portInput" type="number" class="pixel-input" min="1" max="65535" placeholder="3000">
+        <button class="btn btn-tiny" onclick="applyPort()">APPLY</button>
+        <button class="btn btn-tiny btn-danger" onclick="togglePortEdit()">X</button>
+        <span class="port-msg" id="portMsg"></span>
+      </div>
+      <div class="info-item" style="margin-top:10px">
+        <span class="info-lbl">PORT</span>
+        <span>
+          <span class="info-val" id="infoPort" style="font-size:14px">--</span>
+          <button class="btn btn-tiny" style="margin-left:6px" onclick="togglePortEdit()">EDIT</button>
+        </span>
+      </div>
+      <div class="qr-section">
+        <div class="qr-frame">
+          <div id="qrContainer">
+            <div class="qr-placeholder">[=]<br>QR<br>CODE<br>[=]</div>
+          </div>
+        </div>
+        <div class="qr-right">
+          <div class="qr-url-text" id="qrUrlDisplay">--</div>
+          <button class="btn" id="btnCopy" onclick="copyUrl()">COPY URL</button>
+          <button class="btn" id="btnOpenUrl" onclick="openUrl()">OPEN URL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DATA PANEL 3-COL ===== -->
+  <div class="data-grid">
+    <!-- RPS + Uptime -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> TRAFFIC</div>
+      <canvas class="spark-canvas" id="sparkRps" width="280" height="60"></canvas>
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div>
+          <div class="metric-value cyan" id="mRps">--</div>
+          <div class="metric-sub">REQ/S (10s avg)</div>
+        </div>
+        <div style="text-align:right">
+          <div class="metric-value green" id="mUptime">--</div>
+          <div class="metric-sub">UPTIME %</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS BREAKDOWN -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> STATUS CODES</div>
+      <div id="statusBreakdown">
+        <div class="stacked-bar" id="stackedBar"></div>
+        <div class="stack-legend">
+          <span><span style="color:var(--green)">&#9632;</span>2xx</span>
+          <span><span style="color:var(--cyan)">&#9632;</span>3xx</span>
+          <span><span style="color:var(--amber)">&#9632;</span>4xx</span>
+          <span><span style="color:var(--red)">&#9632;</span>5xx</span>
+        </div>
+      </div>
+      <div class="bar-chart" id="statusChart"></div>
+    </div>
+
+    <!-- LATENCY DISTRIBUTION -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> LATENCY</div>
+      <div class="bar-chart" id="latencyChart">
+        <div class="bar-row"><span class="bar-lbl">&lt;10ms</span><span class="bar-track"><span class="bar-fill green" style="width:0%"></span></span><span class="bar-val">0</span></div>
+        <div class="bar-row"><span class="bar-lbl">10-50</span><span class="bar-track"><span class="bar-fill cyan" style="width:0%"></span></span><span class="bar-val">0</span></div>
+        <div class="bar-row"><span class="bar-lbl">50-200</span><span class="bar-track"><span class="bar-fill amber" style="width:0%"></span></span><span class="bar-val">0</span></div>
+        <div class="bar-row"><span class="bar-lbl">&gt;200ms</span><span class="bar-track"><span class="bar-fill red" style="width:0%"></span></span><span class="bar-val">0</span></div>
+      </div>
+    </div>
+
+    <!-- STABILITY STRIP -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> STABILITY</div>
+      <div class="stability-strip" id="stabilityStrip"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <div>
+          <div class="metric-value amber" id="mDisconn">0</div>
+          <div class="metric-sub">DISCONNECTIONS</div>
+        </div>
+        <div style="text-align:right">
+          <div class="metric-value green" id="mOnline">--</div>
+          <div class="metric-sub">ONLINE TIME</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP ENDPOINTS -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> TOP PATHS</div>
+      <table class="path-table" id="pathTable">
+        <tr><td class="path-cell" style="color:var(--muted)">--</td><td class="count-cell">--</td></tr>
+      </table>
+    </div>
+
+    <!-- BYTES -->
+    <div class="metric-widget">
+      <div class="metric-title"><span class="mark">&#9632;</span> THROUGHPUT</div>
+      <div style="margin-top:12px">
+        <div style="margin-bottom:10px">
+          <div class="metric-value cyan" id="mBytesOut">0 B</div>
+          <div class="metric-sub">DATA SENT (estim.)</div>
+        </div>
+        <div>
+          <div class="metric-value green" id="mBytesIn">0 B</div>
+          <div class="metric-sub">DATA RECEIVED (estim.)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== GANTT ===== -->
+  <div class="full-section">
+    <div class="pixel-panel">
+      <div class="pixel-title"><span class="mark blink">&#9632;</span> REQUEST TIMELINE <span style="font-size:8px;margin-left:8px">(60s window)</span></div>
+      <div class="gantt-container" id="ganttChart">
+        <div style="color:rgba(51,255,136,.15);text-align:center;padding:30px">AWAITING DATA STREAM...</div>
+      </div>
+      <div class="gantt-legend">
+        <span><span class="dot ok"></span> 2xx/3xx</span>
+        <span><span class="dot err"></span> 4xx/5xx</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LOG ===== -->
+  <div class="full-section">
+    <div class="pixel-panel">
+      <div class="pixel-title"><span class="mark blink">&#9632;</span> TRANSMISSION LOG</div>
+      <div class="log-container" id="logContainer">
+        <div class="log-line"><span class="ts">[--:--:--]</span> SYSTEM BOOT // awaiting activity...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">TUNNEL MONITOR // open-tunnel // PIXEL PROTOCOL</div>
+</div>
+
+<script>
+// ===== TIMER =====
+let startTime = null;
+function updateTimer() {
+  if (!startTime) return;
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const h = String(Math.floor(elapsed/3600)).padStart(2,'0');
+  const m = String(Math.floor((elapsed%3600)/60)).padStart(2,'0');
+  const s = String(elapsed%60).padStart(2,'0');
+  document.getElementById('timer').textContent = h+':'+m+':'+s;
+  document.getElementById('elapsedText').textContent = 'T+ '+h+':'+m+':'+s;
+}
+
+// ===== GANTT CHART =====
+let requestHistory = [];
+function renderGantt() {
+  const now = Date.now();
+  const windowStart = now - 60000;
+  const recent = requestHistory.filter(r => r.time > windowStart);
+  const container = document.getElementById('ganttChart');
+  if (recent.length === 0) {
+    container.innerHTML = '<div style="color:rgba(51,255,136,.15);text-align:center;padding:30px">NO TRANSMISSIONS IN LAST 60s</div>';
+    return;
+  }
+  container.innerHTML = recent.map(r => {
+    const leftPct = ((r.time - windowStart) / 60000) * 100;
+    const widthPct = Math.max(1, r.latency ? (r.latency / 60000) * 100 : 1);
+    const cls = r.status >= 200 && r.status < 400 ? 'req-200' : 'req-error';
+    return `<div class="gantt-bar-row">
+      <span class="gantt-time">${timeStr(r.time)}</span>
+      <span class="gantt-bar-wrap"><span class="gantt-bar ${cls}" style="left:${leftPct}%;width:${widthPct}%"></span></span>
+      <span class="gantt-label">${r.method||'GET'} ${r.status} ${r.latency||0}ms</span>
+    </div>`;
+  }).join('');
+}
+function timeStr(ts) { const d=new Date(ts); return d.toTimeString().slice(0,8); }
+
+// ===== LOG =====
+let logLines = [];
+function addLog(method, path, status, latency) {
+  const now = new Date();
+  const ts = now.toTimeString().slice(0,8)+'.'+String(now.getMilliseconds()).padStart(3,'0');
+  const cls = status >= 200 && status < 400 ? 'status-ok' : 'status-err';
+  logLines.unshift({ts, method, path, status, cls, latency});
+  if (logLines.length > 100) logLines.length = 100;
+  document.getElementById('logContainer').innerHTML = logLines.map(l =>
+    `<div class="log-line"><span class="ts">[${l.ts}]</span><span class="method">${l.method}</span><span class="path">${l.path}</span> <span class="${l.cls}">${l.status}</span> ${l.latency}ms</div>`
+  ).join('');
+}
+
+// ===== SPARKLINE (RPS) =====
+let sparkData = [];
+function drawSparkline() {
+  const canvas = document.getElementById('sparkRps');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  if (sparkData.length < 2) {
+    ctx.fillStyle = 'rgba(51,255,136,.15)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('AWAITING DATA', W/2, H/2);
+    return;
+  }
+
+  const vals = sparkData;
+  const max = Math.max(...vals, 1);
+  const barW = Math.max(2, W / vals.length);
+
+  // Pixel grid
+  ctx.strokeStyle = 'rgba(51,255,136,.05)';
+  ctx.lineWidth = 0.5;
+  for (let y = 0; y < H; y += 10) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke(); }
+
+  // Bars
+  for (let i = 0; i < vals.length; i++) {
+    const h = (vals[i] / max) * (H - 6);
+    const x = i * barW;
+    const y = H - h - 3;
+    ctx.fillStyle = vals[i] > 0 ? '#33ff88' : 'rgba(51,255,136,.15)';
+    ctx.fillRect(x, y, barW - 1, h);
+  }
+}
+
+// ===== STATUS BREAKDOWN =====
+function updateStatusBreakdown(bd) {
+  const total = bd["2xx"] + bd["3xx"] + bd["4xx"] + bd["5xx"] || 1;
+  const p2 = bd["2xx"] / total * 100;
+  const p3 = bd["3xx"] / total * 100;
+  const p4 = bd["4xx"] / total * 100;
+  const p5 = bd["5xx"] / total * 100;
+
+  document.getElementById('stackedBar').innerHTML =
+    (p2 > 0 ? `<div class="stack-seg s2" style="width:${p2}%"></div>` : '') +
+    (p3 > 0 ? `<div class="stack-seg s3" style="width:${p3}%"></div>` : '') +
+    (p4 > 0 ? `<div class="stack-seg s4" style="width:${p4}%"></div>` : '') +
+    (p5 > 0 ? `<div class="stack-seg s5" style="width:${p5}%"></div>` : '');
+
+  document.getElementById('statusChart').innerHTML = [
+    { label: '2xx', val: bd["2xx"], cls: 'green' },
+    { label: '3xx', val: bd["3xx"], cls: 'cyan' },
+    { label: '4xx', val: bd["4xx"], cls: 'amber' },
+    { label: '5xx', val: bd["5xx"], cls: 'red' },
+  ].map(s => {
+    const w = s.val / total * 100;
+    return `<div class="bar-row"><span class="bar-lbl">${s.label}</span><span class="bar-track"><span class="bar-fill ${s.cls}" style="width:${w}%"></span></span><span class="bar-val">${s.val}</span></div>`;
+  }).join('');
+}
+
+// ===== LATENCY CHART =====
+function updateLatencyChart(bk) {
+  const total = bk.lt10 + bk.lt50 + bk.lt200 + bk.gt200 || 1;
+  const items = [
+    { label: '<10ms', val: bk.lt10, cls: 'green' },
+    { label: '10-50', val: bk.lt50, cls: 'cyan' },
+    { label: '50-200', val: bk.lt200, cls: 'amber' },
+    { label: '>200ms', val: bk.gt200, cls: 'red' },
+  ];
+  document.getElementById('latencyChart').innerHTML = items.map(s => {
+    const w = s.val / total * 100;
+    return `<div class="bar-row"><span class="bar-lbl">${s.label}</span><span class="bar-track"><span class="bar-fill ${s.cls}" style="width:${w}%"></span></span><span class="bar-val">${s.val}</span></div>`;
+  }).join('');
+}
+
+// ===== STABILITY STRIP =====
+let gapHistory = [];
+function updateStability(gaps, totalElapsed) {
+  const strip = document.getElementById('stabilityStrip');
+  if (!gaps || !gaps.length) {
+    strip.innerHTML = '';
+    return;
+  }
+  gapHistory = gaps;
+  const now = Date.now();
+  const windowMs = Math.max(totalElapsed, 60000);
+  const windowStart = now - windowMs;
+
+  strip.innerHTML = gaps.map(g => {
+    const left = ((g.start - windowStart) / windowMs) * 100;
+    const width = Math.max(0.5, (g.duration / windowMs) * 100);
+    return `<div class="stability-seg on" style="left:${Math.max(0,left)}%;width:${width}%"></div>`;
+  }).join('');
+}
+
+// ===== TOP PATHS =====
+function updateTopPaths(paths) {
+  const table = document.getElementById('pathTable');
+  if (!paths || !paths.length) {
+    table.innerHTML = '<tr><td class="path-cell" style="color:var(--muted)">--</td><td class="count-cell">--</td></tr>';
+    return;
+  }
+  table.innerHTML = paths.map(p =>
+    `<tr><td class="path-cell" title="${escHtml(p.path)}">${escHtml(p.path)}</td><td class="count-cell">${p.count}</td></tr>`
+  ).join('');
+}
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function fmtDuration(ms) {
+  if (ms < 60000) return Math.floor(ms/1000) + 's';
+  const m = Math.floor(ms/60000);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m/60);
+  return h + 'h ' + (m%60) + 'm';
+}
+
+// ===== STATUS =====
+let tunnelUrl = null;
+let faceMood = null;
+let blinkPhase = 0;
+
+function drawPixelFace(online) {
+  const canvas = document.getElementById('pixelFace');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 64, H = 64, U = 4; // 16x16 grid, 4px per unit
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Colors
+  const skin = online ? '#33ff88' : '#ff3344';
+  const eye = online ? '#33ddee' : '#ff6677';
+  const pupil = '#050a0f';
+  const bgColor = '#050a0f';
+
+  // Frame background
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, W, H);
+
+  // Pixel frame (1px border)
+  ctx.fillStyle = online ? 'rgba(51,255,136,.5)' : 'rgba(255,51,68,.5)';
+  for (let i = 0; i < 16; i++) { ctx.fillRect(i * U, 0, U, U); ctx.fillRect(i * U, H - U, U, U); }
+  for (let i = 0; i < 16; i++) { ctx.fillRect(0, i * U, U, U); ctx.fillRect(W - U, i * U, U, U); }
+
+  // Cheek blush pixels
+  ctx.fillStyle = online ? 'rgba(51,255,136,.2)' : 'rgba(255,51,68,.2)';
+  ctx.fillRect(2 * U, 9 * U, U, U); ctx.fillRect(2 * U, 10 * U, U, U);
+  ctx.fillRect(13 * U, 9 * U, U, U); ctx.fillRect(13 * U, 10 * U, U, U);
+
+  // Eyes
+  const isBlinking = blinkPhase === 0;
+
+  if (isBlinking) {
+    // Blink: horizontal line
+    ctx.fillStyle = skin;
+    ctx.fillRect(3 * U, 4 * U + U, U * 4, U);
+    ctx.fillRect(9 * U, 4 * U + U, U * 4, U);
+  } else {
+    // Normal eyes: 4x3 blocks
+    ctx.fillStyle = eye;
+    ctx.fillRect(3 * U, 4 * U, U * 4, U);
+    ctx.fillRect(3 * U, 5 * U, U * 4, U);
+    ctx.fillRect(9 * U, 4 * U, U * 4, U);
+    ctx.fillRect(9 * U, 5 * U, U * 4, U);
+
+    // Pupils (2x)
+    ctx.fillStyle = pupil;
+    ctx.fillRect(4 * U, 4 * U, U * 2, U * 2);
+    ctx.fillRect(10 * U, 4 * U, U * 2, U * 2);
+  }
+
+  // Eyebrows
+  ctx.fillStyle = skin;
+  ctx.fillRect(3 * U, 3 * U, U * 4, U);
+  ctx.fillRect(9 * U, 3 * U, U * 4, U);
+
+  // Mouth
+  const mouthColor = online ? skin : '#ff3344';
+  ctx.fillStyle = mouthColor;
+
+  if (online) {
+    // Happy mouth (smile arc)
+    ctx.fillRect(4 * U, 11 * U, U, U);
+    ctx.fillRect(11 * U, 11 * U, U, U);
+    ctx.fillRect(5 * U, 12 * U, U, U);
+    ctx.fillRect(10 * U, 12 * U, U, U);
+    ctx.fillRect(6 * U, 13 * U, U * 4, U);
+    // Tongue
+    ctx.fillStyle = 'rgba(255,51,68,.3)';
+    ctx.fillRect(7 * U, 13 * U, U * 2, U);
+  } else {
+    // Sad mouth (frown - inverted smile)
+    ctx.fillRect(6 * U, 11 * U, U * 4, U);
+    ctx.fillRect(5 * U, 12 * U, U, U);
+    ctx.fillRect(10 * U, 12 * U, U, U);
+    ctx.fillRect(4 * U, 13 * U, U, U);
+    ctx.fillRect(11 * U, 13 * U, U, U);
+    // Tear
+    ctx.fillStyle = 'rgba(51,221,238,.5)';
+    ctx.fillRect(5 * U, 7 * U, U, U);
+    ctx.fillRect(5 * U, 8 * U, U, U);
+  }
+
+  // Glow class
+  canvas.className = 'face-canvas ' + (online ? 'happy' : 'sad');
+}
+
+// Blink animation
+let blinkTimer = 0;
+function updateBlink() {
+  blinkTimer++;
+  // Blink every ~3 seconds, last 2 frames
+  if (blinkTimer > 60 && blinkTimer < 63) blinkPhase = 0;
+  else blinkPhase = 1;
+  if (blinkTimer > 63) blinkTimer = 0;
+}
+setInterval(updateBlink, 50);
+
+function updateQr(url) {
+  if (!url) return;
+  const qrEl = document.getElementById('qrContainer');
+  const encoded = encodeURIComponent(url);
+  qrEl.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encoded}" width="140" height="140" alt="QR Code" onerror="this.parentElement.innerHTML='<div class=qr-placeholder>QR FAIL</div>'">`;
+  document.getElementById('qrUrlDisplay').textContent = url;
+}
+
+function updateStatus(data) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot '+(data.online ? 'online' : 'offline');
+  document.getElementById('statusText').textContent = data.online ? 'ONLINE' : 'OFFLINE';
+
+  // Pixel face
+  if (faceMood !== data.online) {
+    faceMood = data.online;
+    drawPixelFace(data.online);
+  }
+
+  // Data stream: kill when offline, resurrect when online
+  if (dsOnline !== data.online) {
+    dsOnline = data.online;
+    if (data.online) {
+      // Reactivate all drops
+      if (drops.length) {
+        for (const d of drops) { d.active = true; d.y = Math.random() * dsH * -1; }
+      } else {
+        initDrops();
+      }
+    } else {
+      for (const d of drops) d.active = false;
+    }
+  }
+
+  if (data.publicUrl) {
+    tunnelUrl = data.publicUrl;
+    document.getElementById('infoUrl').textContent = data.publicUrl;
+    document.getElementById('infoUrl').title = data.publicUrl;
+    if (data.publicUrl !== document.getElementById('qrUrlDisplay').textContent) updateQr(data.publicUrl);
+  }
+  if (data.localPort !== undefined) {
+    document.getElementById('infoLocal').textContent = 'localhost:'+data.localPort;
+    document.getElementById('infoPort').textContent = ':'+data.localPort;
+  }
+  if (data.totalRequests !== undefined) document.getElementById('stRequests').textContent = data.totalRequests;
+  if (data.okRequests !== undefined && data.totalRequests > 0)
+    document.getElementById('stSuccess').textContent = Math.round(data.okRequests/data.totalRequests*100)+'%';
+  if (data.avgLatency !== undefined) document.getElementById('stLatency').textContent = data.avgLatency+'ms';
+  if (data.connections !== undefined) document.getElementById('stConns').textContent = data.connections;
+
+  // Extended metrics
+  if (data.rps10s !== undefined) { document.getElementById('mRps').textContent = data.rps10s; dsTraffic = Math.min(5, data.rps10s || 0); }
+  if (data.uptimePct !== undefined) document.getElementById('mUptime').textContent = data.uptimePct + '%';
+  if (data.disconnectionCount !== undefined) document.getElementById('mDisconn').textContent = data.disconnectionCount;
+  if (data.totalOnlineMs !== undefined) document.getElementById('mOnline').textContent = fmtDuration(data.totalOnlineMs);
+  if (data.bytesOut !== undefined) document.getElementById('mBytesOut').textContent = fmtBytes(data.bytesOut);
+  if (data.bytesIn !== undefined) document.getElementById('mBytesIn').textContent = fmtBytes(data.bytesIn);
+
+  if (data.statusBreakdown) updateStatusBreakdown(data.statusBreakdown);
+  if (data.latencyBuckets) updateLatencyChart(data.latencyBuckets);
+  if (data.topPaths) updateTopPaths(data.topPaths);
+
+  // Sparkline
+  if (data.requestTimes && data.requestTimes.length) {
+    const now = Date.now();
+    const windowStart = now - 60000;
+    const bins = new Array(60).fill(0);
+    for (const t of data.requestTimes) {
+      const idx = Math.floor((t - windowStart) / 1000);
+      if (idx >= 0 && idx < 60) bins[idx]++;
+    }
+    sparkData = bins;
+  }
+  drawSparkline();
+
+  // Stability
+  if (data.connectionGaps && data.totalOnlineMs !== undefined) {
+    updateStability(data.connectionGaps, data.startTime ? Date.now() - data.startTime : 60000);
+  }
+}
+
+// ===== Clipboard =====
+function copyUrl() {
+  if (!tunnelUrl) return;
+  navigator.clipboard.writeText(tunnelUrl).then(() => {
+    const btn = document.getElementById('btnCopy');
+    btn.textContent = '[ COPIED ]'; btn.classList.add('btn-pressed');
+    setTimeout(() => { btn.textContent = 'COPY URL'; btn.classList.remove('btn-pressed'); }, 1800);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = tunnelUrl; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    const btn = document.getElementById('btnCopy');
+    btn.textContent = '[ COPIED ]'; btn.classList.add('btn-pressed');
+    setTimeout(() => { btn.textContent = 'COPY URL'; btn.classList.remove('btn-pressed'); }, 1800);
+  });
+}
+function openUrl() { if (tunnelUrl) window.open(tunnelUrl, '_blank'); }
+
+// ===== PORT EDITOR =====
+let portEditVisible = false;
+function togglePortEdit() {
+  portEditVisible = !portEditVisible;
+  const editor = document.getElementById('portEditor');
+  if (portEditVisible) {
+    editor.style.display = 'flex';
+    document.getElementById('portInput').value = document.getElementById('infoPort').textContent.replace(':','');
+    document.getElementById('portMsg').textContent = '';
+  } else {
+    editor.style.display = 'none';
+  }
+}
+async function applyPort() {
+  const input = document.getElementById('portInput');
+  const p = parseInt(input.value);
+  const msgEl = document.getElementById('portMsg');
+  if (!p || p < 1 || p > 65535) { msgEl.textContent = 'INVALID'; msgEl.style.color = '#ff3344'; return; }
+  msgEl.textContent = '...'; msgEl.style.color = '#ffbb33';
+  try {
+    const resp = await fetch('/api/port', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({port:p}) });
+    const data = await resp.json();
+    if (data.success) {
+      document.getElementById('infoLocal').textContent = 'localhost:'+p;
+      document.getElementById('infoPort').textContent = ':'+p;
+      msgEl.textContent = 'OK'; msgEl.style.color = '#33ff88';
+      document.getElementById('infoUrl').textContent = '-- // reconnecting';
+      document.getElementById('qrUrlDisplay').textContent = '--';
+      document.getElementById('qrContainer').innerHTML = '<div class="qr-placeholder">[=]<br>AWAITING<br>TUNNEL<br>[=]</div>';
+      tunnelUrl = null;
+      setTimeout(() => togglePortEdit(), 1500);
+    } else {
+      msgEl.textContent = data.error || 'FAILED'; msgEl.style.color = '#ff3344';
+    }
+  } catch (e) { msgEl.textContent = 'ERROR'; msgEl.style.color = '#ff3344'; }
+}
+
+// ===== FETCH LOOP =====
+async function poll() {
+  try {
+    const resp = await fetch('/api/status');
+    const data = await resp.json();
+    if (!startTime && data.startTime) startTime = data.startTime;
+    updateStatus(data);
+    if (data.requests) { requestHistory = data.requests; renderGantt(); }
+    if (data.recentLogs) data.recentLogs.forEach(e => addLog(e.method, e.path, e.status, e.latency));
+  } catch (e) {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusText').textContent = 'DASHBOARD ERR';
+  }
+}
+
+poll(); setInterval(poll, 2000); setInterval(updateTimer, 250);
+
+// ===== DATA STREAM TUNNEL EFFECT =====
+const dsCanvas = document.getElementById('dataStream');
+let dsCtx, dsW, dsH, dsColumns, drops, dsTraffic = 0, dsOnline = false;
+
+const CHARS_POOL = [
+  '7F','A2','3C','E1','B4','D8','09','5E','F0','2A','6B','C3','9D','10','8F','4E',
+  '01','10','11','00','101','010','0110','1001','1100','0011',
+  'GET','POST','PUT','ACK','SYN','RST','200','301','404','500','TCP','SSH','22','80','443',
+  'HTTP','RSA','TLS','DNS','P2P','IPv4','IPv6','PORT','HOST','MUX',
+  'mbps','rtt','hop','ping','TTL','csum','frag','MTU','VLAN',
+  '\u2588','\u2593','\u2592','\u2591','\u2580','\u2584','\u258C','\u2590',
+  '<>','//','::','=>','->','{}','[]','()','##','@','..','||',
+];
+
+function initDataStream() {
+  if (!dsCanvas) return;
+  dsCtx = dsCanvas.getContext('2d');
+  resizeDs();
+  initDrops();
+  window.addEventListener('resize', resizeDs);
+  animateDs();
+}
+
+function resizeDs() {
+  dsW = dsCanvas.width = window.innerWidth;
+  dsH = dsCanvas.height = window.innerHeight;
+  initDrops();
+}
+
+function initDrops() {
+  const colW = 20;
+  dsColumns = Math.floor(dsW / colW);
+  drops = [];
+  // Double density: two drops per column
+  for (let wave = 0; wave < 2; wave++) {
+    for (let i = 0; i < dsColumns; i++) {
+      drops.push({
+        x: i * colW + Math.random() * (colW - 6),
+        y: Math.random() * dsH * -1 - wave * 200,
+        speed: 1 + Math.random() * 3.5,
+        len: 8 + Math.floor(Math.random() * 16),
+        chars: [],
+        active: Math.random() > 0.1,
+        glow: Math.random() > 0.6,
+        isPixel: Math.random() > 0.8,
+        drift: (Math.random() - 0.5) * 0.3,
+      });
+      for (let j = 0; j < drops[drops.length-1].len; j++) {
+        drops[drops.length-1].chars.push(randChar());
+      }
+    }
+  }
+}
+
+function randChar() {
+  return CHARS_POOL[Math.floor(Math.random() * CHARS_POOL.length)];
+}
+
+function animateDs() {
+  dsCtx.clearRect(0, 0, dsW, dsH);
+
+  // Horizontal scan lines (subtle, persist even offline)
+  dsCtx.fillStyle = 'rgba(51,255,136,.012)';
+  for (let y = 0; y < dsH; y += 4) {
+    dsCtx.fillRect(0, y, dsW, 1);
+  }
+
+  // When offline: fade all out, no drops
+  if (!dsOnline) {
+    // Fade residual drops slowly
+    let hasActive = false;
+    for (let i = 0; i < drops.length && !hasActive; i++) {
+      if (drops[i].active) hasActive = true;
+    }
+    if (!hasActive) {
+      // Vertical interference pattern (subtle "scanning for signal" lines)
+      const t = Date.now() * 0.0005;
+      for (let i = 0; i < 3; i++) {
+        const lineY = ((t + i * 0.33) % 1) * dsH;
+        dsCtx.fillStyle = 'rgba(255,51,68,0.025)';
+        dsCtx.fillRect(0, lineY, dsW, 1);
+        dsCtx.fillRect(0, lineY + 1, dsW, 1);
+      }
+    }
+    requestAnimationFrame(animateDs);
+    return;
+  }
+
+  // Online: full drop rendering
+  const reactChance = 0.015 + dsTraffic * 0.015;
+  const deactChance = 0.002;
+
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    if (Math.random() < deactChance && d.active) { d.active = false; }
+    if (Math.random() < reactChance && !d.active) { d.active = true; d.y = Math.random() * -300; }
+
+    if (!d.active) { d.y += d.speed * 0.2; if (d.y > dsH + 100) d.y = -100; continue; }
+
+    // Speed boost from traffic
+    const spd = d.speed + dsTraffic * 0.5;
+
+    // Tunnel funnel: center columns faster
+    const idx = i % dsColumns;
+    const centerBias = 1 - Math.abs(idx / dsColumns - 0.5) * 0.6;
+    const finalSpeed = spd * centerBias;
+
+    d.y += finalSpeed;
+    d.x += d.drift;
+    if (d.y > dsH + 200) { d.y = Math.random() * -300; d.x = idx * 20 + Math.random() * 14; d.chars = []; for (let j = 0; j < d.len; j++) d.chars.push(randChar()); }
+
+    // Shift trail more frequently
+    if (Math.random() < 0.4) { d.chars.pop(); d.chars.unshift(randChar()); }
+
+    // Draw trail with tighter spacing
+    const trailLen = Math.min(d.chars.length, 18);
+    for (let j = 0; j < trailLen; j++) {
+      const cy = d.y - j * 10;
+      if (cy < -20 || cy > dsH + 20) continue;
+
+      const alpha = Math.max(0, 1 - j / trailLen);
+      const text = d.chars[j] || randChar();
+
+      if (d.isPixel && Math.random() < 0.25) {
+        const blockSize = 3 + Math.floor(Math.random() * 5);
+        if (j === 0) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.65})`;
+        } else {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.1})`;
+        }
+        dsCtx.fillRect(d.x, cy, blockSize, blockSize);
+      } else {
+        if (j === 0) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha})`;
+          dsCtx.font = 'bold 12px monospace';
+        } else if (j <= 2) {
+          dsCtx.fillStyle = `rgba(51,221,238,${alpha * 0.55})`;
+          dsCtx.font = '10px monospace';
+        } else if (j <= 6) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.18})`;
+          dsCtx.font = '9px monospace';
+        } else {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.05})`;
+          dsCtx.font = '8px monospace';
+        }
+        dsCtx.fillText(text, d.x, cy);
+      }
+    }
+
+    // Glow trail
+    if (d.glow && d.chars.length > 0) {
+      const gx = d.x, gy = d.y;
+      dsCtx.fillStyle = 'rgba(51,255,136,0.05)';
+      dsCtx.fillRect(gx - 3, gy - 16, 36, 20);
+    }
+  }
+
+  // Central tunnel "pipe" fade
+  const pipeX = dsW * 0.35, pipeW = dsW * 0.3;
+  const grad1 = dsCtx.createLinearGradient(pipeX, 0, pipeX + pipeW, 0);
+  grad1.addColorStop(0, 'rgba(5,10,15,0)');
+  grad1.addColorStop(0.3, 'rgba(51,255,136,0.02)');
+  grad1.addColorStop(0.5, 'rgba(51,221,238,0.03)');
+  grad1.addColorStop(0.7, 'rgba(51,255,136,0.02)');
+  grad1.addColorStop(1, 'rgba(5,10,15,0)');
+  dsCtx.fillStyle = grad1;
+  dsCtx.fillRect(0, 0, dsW, dsH);
+
+  // Tunnel edge lines
+  dsCtx.strokeStyle = 'rgba(51,255,136,0.06)';
+  dsCtx.lineWidth = 1;
+  dsCtx.setLineDash([20, 60]);
+  dsCtx.beginPath();
+  dsCtx.moveTo(pipeX, 0); dsCtx.lineTo(pipeX, dsH);
+  dsCtx.stroke();
+  dsCtx.beginPath();
+  dsCtx.moveTo(pipeX + pipeW, 0); dsCtx.lineTo(pipeX + pipeW, dsH);
+  dsCtx.stroke();
+  dsCtx.setLineDash([]);
+
+  // Bottom data accumulation glow
+  const grdBtm = dsCtx.createLinearGradient(0, dsH - 80, 0, dsH);
+  grdBtm.addColorStop(0, 'rgba(51,255,136,0)');
+  grdBtm.addColorStop(1, 'rgba(51,255,136,0.02)');
+  dsCtx.fillStyle = grdBtm;
+  dsCtx.fillRect(0, dsH - 80, dsW, 80);
+
+  requestAnimationFrame(animateDs);
+}
+
+initDataStream();
+</script>
+</body>
+</html>

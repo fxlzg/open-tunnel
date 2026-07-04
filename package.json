@@ -1,0 +1,9 @@
+{
+  "name": "open-tunnel",
+  "version": "1.0.0",
+  "description": "零配置内网穿透工具 — 一键将本地服务暴露到公网",
+  "main": "index.js",
+  "bin": { "tunnel": "./index.js" },
+  "keywords": ["tunnel", "ngrok", "serveo", "内网穿透"],
+  "license": "MIT"
+}
