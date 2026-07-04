@@ -7,7 +7,7 @@
 无需安装任何依赖，仅需 Node.js 和系统自带 OpenSSH（Windows 10+ 内置）。
 
 ```
-git clone <repo> open-tunnel
+git clone https://github.com/fxlzg/open-tunnel.git
 cd open-tunnel
 ```
 
