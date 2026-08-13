@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>DIGITAL RAIN // standalone</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:#050a0f;overflow:hidden;min-height:100vh}
+  /* ===== DATA STREAM BACKGROUND ===== */
+  .data-stream-bg{
+    position:fixed;inset:0;z-index:0;pointer-events:none;
+    image-rendering:pixelated;
+    opacity:.6;
+  }
+  .hint{
+    position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+    z-index:1;color:#185533;font:10px 'Courier New',monospace;letter-spacing:2px;
+  }
+</style>
+</head>
+<body>
+<canvas id="dataStream" class="data-stream-bg"></canvas>
+<div class="hint">OPEN-TUNNEL // DIGITAL RAIN</div>
+
+<script>
+// ===== DATA STREAM TUNNEL EFFECT (extracted) =====
+const dsCanvas = document.getElementById('dataStream');
+let dsCtx, dsW, dsH, dsColumns, drops, dsTraffic = 0, dsOnline = true;
+
+const CHARS_POOL = [
+  '7F','A2','3C','E1','B4','D8','09','5E','F0','2A','6B','C3','9D','10','8F','4E',
+  '01','10','11','00','101','010','0110','1001','1100','0011',
+  'GET','POST','PUT','ACK','SYN','RST','200','301','404','500','TCP','SSH','22','80','443',
+  'HTTP','RSA','TLS','DNS','P2P','IPv4','IPv6','PORT','HOST','MUX',
+  'mbps','rtt','hop','ping','TTL','csum','frag','MTU','VLAN',
+  '\u2588','\u2593','\u2592','\u2591','\u2580','\u2584','\u258C','\u2590',
+  '<>','//','::','=>','->','{}','[]','()','##','@','..','||',
+];
+
+function initDataStream() {
+  if (!dsCanvas) return;
+  dsCtx = dsCanvas.getContext('2d');
+  resizeDs();
+  initDrops();
+  window.addEventListener('resize', resizeDs);
+  animateDs();
+}
+
+function resizeDs() {
+  dsW = dsCanvas.width = window.innerWidth;
+  dsH = dsCanvas.height = window.innerHeight;
+  initDrops();
+}
+
+function initDrops() {
+  const colW = 20;
+  dsColumns = Math.floor(dsW / colW);
+  drops = [];
+  // Double density: two drops per column
+  for (let wave = 0; wave < 2; wave++) {
+    for (let i = 0; i < dsColumns; i++) {
+      drops.push({
+        x: i * colW + Math.random() * (colW - 6),
+        y: Math.random() * dsH * -1 - wave * 200,
+        speed: 1 + Math.random() * 3.5,
+        len: 8 + Math.floor(Math.random() * 16),
+        chars: [],
+        active: Math.random() > 0.1,
+        glow: Math.random() > 0.6,
+        isPixel: Math.random() > 0.8,
+        drift: (Math.random() - 0.5) * 0.3,
+      });
+      for (let j = 0; j < drops[drops.length-1].len; j++) {
+        drops[drops.length-1].chars.push(randChar());
+      }
+    }
+  }
+}
+
+function randChar() {
+  return CHARS_POOL[Math.floor(Math.random() * CHARS_POOL.length)];
+}
+
+function animateDs() {
+  dsCtx.clearRect(0, 0, dsW, dsH);
+
+  // Horizontal scan lines (subtle)
+  dsCtx.fillStyle = 'rgba(51,255,136,.012)';
+  for (let y = 0; y < dsH; y += 4) {
+    dsCtx.fillRect(0, y, dsW, 1);
+  }
+
+  // Full drop rendering
+  const reactChance = 0.015 + dsTraffic * 0.015;
+  const deactChance = 0.002;
+
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    if (Math.random() < deactChance && d.active) { d.active = false; }
+    if (Math.random() < reactChance && !d.active) { d.active = true; d.y = Math.random() * -300; }
+
+    if (!d.active) { d.y += d.speed * 0.2; if (d.y > dsH + 100) d.y = -100; continue; }
+
+    // Speed boost from traffic
+    const spd = d.speed + dsTraffic * 0.5;
+
+    // Tunnel funnel: center columns faster
+    const idx = i % dsColumns;
+    const centerBias = 1 - Math.abs(idx / dsColumns - 0.5) * 0.6;
+    const finalSpeed = spd * centerBias;
+
+    d.y += finalSpeed;
+    d.x += d.drift;
+    if (d.y > dsH + 200) { d.y = Math.random() * -300; d.x = idx * 20 + Math.random() * 14; d.chars = []; for (let j = 0; j < d.len; j++) d.chars.push(randChar()); }
+
+    // Shift trail more frequently
+    if (Math.random() < 0.4) { d.chars.pop(); d.chars.unshift(randChar()); }
+
+    // Draw trail with tighter spacing
+    const trailLen = Math.min(d.chars.length, 18);
+    for (let j = 0; j < trailLen; j++) {
+      const cy = d.y - j * 10;
+      if (cy < -20 || cy > dsH + 20) continue;
+
+      const alpha = Math.max(0, 1 - j / trailLen);
+      const text = d.chars[j] || randChar();
+
+      if (d.isPixel && Math.random() < 0.25) {
+        const blockSize = 3 + Math.floor(Math.random() * 5);
+        if (j === 0) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.65})`;
+        } else {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.1})`;
+        }
+        dsCtx.fillRect(d.x, cy, blockSize, blockSize);
+      } else {
+        if (j === 0) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha})`;
+          dsCtx.font = 'bold 12px monospace';
+        } else if (j <= 2) {
+          dsCtx.fillStyle = `rgba(51,221,238,${alpha * 0.55})`;
+          dsCtx.font = '10px monospace';
+        } else if (j <= 6) {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.18})`;
+          dsCtx.font = '9px monospace';
+        } else {
+          dsCtx.fillStyle = `rgba(51,255,136,${alpha * 0.05})`;
+          dsCtx.font = '8px monospace';
+        }
+        dsCtx.fillText(text, d.x, cy);
+      }
+    }
+
+    // Glow trail
+    if (d.glow && d.chars.length > 0) {
+      const gx = d.x, gy = d.y;
+      dsCtx.fillStyle = 'rgba(51,255,136,0.05)';
+      dsCtx.fillRect(gx - 3, gy - 16, 36, 20);
+    }
+  }
+
+  // Central tunnel "pipe" fade
+  const pipeX = dsW * 0.35, pipeW = dsW * 0.3;
+  const grad1 = dsCtx.createLinearGradient(pipeX, 0, pipeX + pipeW, 0);
+  grad1.addColorStop(0, 'rgba(5,10,15,0)');
+  grad1.addColorStop(0.3, 'rgba(51,255,136,0.02)');
+  grad1.addColorStop(0.5, 'rgba(51,221,238,0.03)');
+  grad1.addColorStop(0.7, 'rgba(51,255,136,0.02)');
+  grad1.addColorStop(1, 'rgba(5,10,15,0)');
+  dsCtx.fillStyle = grad1;
+  dsCtx.fillRect(0, 0, dsW, dsH);
+
+  // Tunnel edge lines
+  dsCtx.strokeStyle = 'rgba(51,255,136,0.06)';
+  dsCtx.lineWidth = 1;
+  dsCtx.setLineDash([20, 60]);
+  dsCtx.beginPath();
+  dsCtx.moveTo(pipeX, 0); dsCtx.lineTo(pipeX, dsH);
+  dsCtx.stroke();
+  dsCtx.beginPath();
+  dsCtx.moveTo(pipeX + pipeW, 0); dsCtx.lineTo(pipeX + pipeW, dsH);
+  dsCtx.stroke();
+  dsCtx.setLineDash([]);
+
+  // Bottom data accumulation glow
+  const grdBtm = dsCtx.createLinearGradient(0, dsH - 80, 0, dsH);
+  grdBtm.addColorStop(0, 'rgba(51,255,136,0)');
+  grdBtm.addColorStop(1, 'rgba(51,255,136,0.02)');
+  dsCtx.fillStyle = grdBtm;
+  dsCtx.fillRect(0, dsH - 80, dsW, 80);
+
+  requestAnimationFrame(animateDs);
+}
+
+initDataStream();
+</script>
+</body>
+</html>

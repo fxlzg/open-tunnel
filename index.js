@@ -58,7 +58,8 @@ function ok(msg) { process.stdout.write(`  + ${msg}\n`); }
 function warn(msg) { process.stdout.write(`  ! ${msg}\n`); }
 
 function findSsh() {
-  try { return execSync("where ssh", { encoding: "utf8", stdio: ["pipe","pipe","ignore"] }).trim().split("\n")[0]; }
+  const cmd = process.platform === "win32" ? "where ssh" : "which ssh";
+  try { return execSync(cmd, { encoding: "utf8", stdio: ["pipe","pipe","ignore"] }).trim().split("\n")[0]; }
   catch { return "ssh"; }
 }
 
@@ -249,7 +250,7 @@ function startDashboard() {
 function startServeo(keyPath) {
   const sshArgs = [
     "-o", "StrictHostKeyChecking=no",
-    "-o", "UserKnownHostsFile=NUL",
+    "-o", "UserKnownHostsFile=" + (process.platform === "win32" ? "NUL" : "/dev/null"),
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",
     "-o", "ExitOnForwardFailure=yes",
