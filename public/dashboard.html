@@ -619,6 +619,7 @@ function updateTopPaths(paths) {
     `<tr><td class="path-cell" title="${escHtml(p.path)}">${escHtml(p.path)}</td><td class="count-cell">${p.count}</td></tr>`
   ).join('');
 }
+
 function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
 function fmtBytes(b) {

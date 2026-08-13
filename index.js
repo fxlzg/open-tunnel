@@ -88,7 +88,6 @@ const state = {
   totalLatency: 0,
   requests: [],
   recentLogs: [],
-  // Extended metrics
   statusBreakdown: { "2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0 },
   requestTimes: [],
   latencyBuckets: { lt10: 0, lt50: 0, lt200: 0, gt200: 0 },
@@ -112,29 +111,24 @@ function recordRequest(method, path, status, latency) {
   if (state.requests.length > 500) state.requests = state.requests.slice(-500);
   if (state.recentLogs.length > 200) state.recentLogs = state.recentLogs.slice(-200);
 
-  // Status breakdown
   const sc = Math.floor(status / 100);
   if (sc === 2) state.statusBreakdown["2xx"]++;
   else if (sc === 3) state.statusBreakdown["3xx"]++;
   else if (sc === 4) state.statusBreakdown["4xx"]++;
   else if (sc === 5) state.statusBreakdown["5xx"]++;
 
-  // Latency buckets
   if (latency < 10) state.latencyBuckets.lt10++;
   else if (latency < 50) state.latencyBuckets.lt50++;
   else if (latency < 200) state.latencyBuckets.lt200++;
   else state.latencyBuckets.gt200++;
 
-  // RPS tracking (keep last 60s)
   state.requestTimes.push(Date.now());
   const cutoff = Date.now() - 60000;
   while (state.requestTimes.length && state.requestTimes[0] < cutoff) state.requestTimes.shift();
 
-  // Endpoint stats
   if (!state.endpointStats[path]) state.endpointStats[path] = 0;
   state.endpointStats[path]++;
 
-  // Bytes estimation
   if (method === "POST") state.bytesIn += 128;
   state.bytesOut += 512;
 }
@@ -151,66 +145,47 @@ function serveFile(res, filePath, contentType) {
   }
 }
 
+function formatShortJson(data) {
+  // Pre-compute these once
+  const avgLat = state.totalRequests > 0 ? Math.round(state.totalLatency / state.totalRequests) : 0;
+  const activeOnlineMs = state.online && state.onlineSince ? Date.now() - state.onlineSince : 0;
+  const totalOnline = state.totalOnlineMs + activeOnlineMs;
+  const totalElapsed = Date.now() - state.startTime;
+  const uptimePct = totalElapsed > 0 ? Math.round((totalOnline / totalElapsed) * 1000) / 10 : 0;
+  const rpsCutoff = Date.now() - 10000;
+  const recentReqs = state.requestTimes.filter(t => t > rpsCutoff).length;
+  const rps10s = Math.round(recentReqs / 10 * 10) / 10;
+  const topPaths = Object.entries(state.endpointStats).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p, c]) => ({ path: p, count: c }));
+
+  return JSON.stringify({
+    online: state.online, publicUrl: state.publicUrl, localPort: state.localPort,
+    startTime: state.startTime, totalRequests: state.totalRequests, okRequests: state.okRequests,
+    avgLatency: avgLat, lastLatency: state.lastLatency, connections: 1,
+    requests: state.requests.slice(-200).map(r => ({ time: r.time, method: r.method, path: r.path, status: r.status, latency: r.latency })),
+    recentLogs: state.recentLogs.slice(-8),
+    statusBreakdown: state.statusBreakdown, latencyBuckets: state.latencyBuckets,
+    rps10s, requestTimes: state.requestTimes.slice(-300),
+    bytesIn: state.bytesIn, bytesOut: state.bytesOut,
+    disconnectionCount: state.disconnectionCount, uptimePct, totalOnlineMs: totalOnline,
+    connectionGaps: state.connectionGaps.slice(-20), topPaths,
+  });
+}
+
 function startDashboard() {
   const publicDir = path.join(__dirname, "public");
 
   const dashboard = http.createServer((req, res) => {
     const t0 = Date.now();
-
-    // CORS
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 
-    // API
     if (req.url === "/api/status") {
-      const avgLat = state.totalRequests > 0 ? Math.round(state.totalLatency / state.totalRequests) : 0;
-      const activeOnlineMs = state.online && state.onlineSince ? Date.now() - state.onlineSince : 0;
-      const totalOnline = state.totalOnlineMs + activeOnlineMs;
-      const totalElapsed = Date.now() - state.startTime;
-      const uptimePct = totalElapsed > 0 ? Math.round((totalOnline / totalElapsed) * 1000) / 10 : 0;
-
-      // RPS
-      const rpsCutoff = Date.now() - 10000;
-      const recentReqs = state.requestTimes.filter(t => t > rpsCutoff).length;
-      const rps10s = Math.round(recentReqs / 10 * 10) / 10;
-
-      // Top endpoints
-      const topPaths = Object.entries(state.endpointStats)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([p, c]) => ({ path: p, count: c }));
-
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        online: state.online,
-        publicUrl: state.publicUrl,
-        localPort: state.localPort,
-        startTime: state.startTime,
-        totalRequests: state.totalRequests,
-        okRequests: state.okRequests,
-        avgLatency: avgLat,
-        lastLatency: state.lastLatency,
-        connections: 1,
-        requests: state.requests.slice(-200).map(r => ({ time: r.time, method: r.method, path: r.path, status: r.status, latency: r.latency })),
-        recentLogs: state.recentLogs.slice(-8),
-        // Extended metrics
-        statusBreakdown: state.statusBreakdown,
-        latencyBuckets: state.latencyBuckets,
-        rps10s: rps10s,
-        requestTimes: state.requestTimes.slice(-300),
-        bytesIn: state.bytesIn,
-        bytesOut: state.bytesOut,
-        disconnectionCount: state.disconnectionCount,
-        uptimePct: uptimePct,
-        totalOnlineMs: totalOnline,
-        connectionGaps: state.connectionGaps.slice(-20),
-        topPaths: topPaths,
-      }));
+      res.end(formatShortJson());
       recordRequest("GET", "/api/status", 200, Date.now() - t0);
       return;
     }
 
-    // Proxy to target (for testing/health checks via dashboard)
     if (req.url === "/api/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, target: `localhost:${port}`, uptime: Math.floor((Date.now() - state.startTime) / 1000) }));
@@ -218,7 +193,6 @@ function startDashboard() {
       return;
     }
 
-    // Change forwarded port
     if (req.url === "/api/port" && req.method === "POST") {
       let body = "";
       req.on("data", (c) => (body += c));
@@ -228,19 +202,13 @@ function startDashboard() {
           const p = parseInt(newPort);
           if (!p || p < 1 || p > 65535) {
             res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: "Invalid port (1-65535)" }));
+            res.end(JSON.stringify({ success: false, error: "Invalid port" }));
             recordRequest("POST", "/api/port", 400, Date.now() - t0);
             return;
           }
-          port = p;
-          state.localPort = p;
-          state.publicUrl = null;
-          state.online = false;
-          // Kill old tunnel and start new one
+          port = p; state.localPort = p; state.publicUrl = null; state.online = false;
           if (currentSsh) { currentSsh.kill(); currentSsh = null; }
-          const key = ensureKey();
-          info(`Port changed to ${p}, reconnecting...`);
-          startServeo(key);
+          startServeo(ensureKey());
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ success: true, port: p }));
           recordRequest("POST", "/api/port", 200, Date.now() - t0);
@@ -253,7 +221,6 @@ function startDashboard() {
       return;
     }
 
-    // Static files
     if (req.url === "/" || req.url === "/dashboard") {
       serveFile(res, path.join(publicDir, "dashboard.html"), "text/html; charset=utf-8");
       recordRequest("GET", req.url, 200, Date.now() - t0);
@@ -262,13 +229,11 @@ function startDashboard() {
 
     if (req.url.startsWith("/public/") || req.url.startsWith("/assets/")) {
       const f = path.join(publicDir, path.basename(req.url));
-      const ext = path.extname(req.url);
-      const mime = { ".css": "text/css", ".js": "application/javascript", ".html": "text/html" }[ext] || "text/plain";
+      const mime = { ".css": "text/css", ".js": "application/javascript", ".html": "text/html" }[path.extname(req.url)] || "text/plain";
       serveFile(res, f, mime);
       return;
     }
 
-    // 404
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("404");
     recordRequest("GET", req.url, 404, Date.now() - t0);
@@ -277,7 +242,6 @@ function startDashboard() {
   dashboard.listen(DASHBOARD_PORT, () => {
     ok(`Dashboard: http://localhost:${DASHBOARD_PORT}`);
   });
-
   return dashboard;
 }
 
@@ -340,9 +304,7 @@ function startServeo(keyPath) {
     if (state.online && state.onlineSince) {
       state.totalOnlineMs += Date.now() - state.onlineSince;
       state.connectionGaps.push({
-        start: state.onlineSince,
-        end: Date.now(),
-        duration: Date.now() - state.onlineSince,
+        start: state.onlineSince, end: Date.now(), duration: Date.now() - state.onlineSince,
       });
       if (state.connectionGaps.length > 50) state.connectionGaps = state.connectionGaps.slice(-50);
     }
@@ -377,7 +339,6 @@ console.log("");
 console.log(`  open-tunnel // zero-config tunnel`);
 console.log(`  --------------------------------------------------`);
 
-// Verify OpenSSH
 if (backend === "serveo") {
   try { execSync(`${findSsh()} -V`, { stdio: "ignore" }); } catch {
     warn("OpenSSH not found");
@@ -385,23 +346,15 @@ if (backend === "serveo") {
   }
 }
 
-// Ensure SSH key
 const keyPath = ensureKey();
 if (subdomain) info(`Subdomain: ${subdomain}`);
 
-// Start dashboard
-if (!noDashboard) {
-  startDashboard();
-}
-
-// Start tunnel
+if (!noDashboard) { startDashboard(); }
 info(`Connecting to ${SERVER} on port ${port}...`);
 startServeo(keyPath);
 
-// Keep alive
 process.stdin.resume();
 
-// Auto-open browser
 if (hasFlag("--open", "-o") && !noDashboard) {
   setTimeout(() => {
     const cmd = process.platform === "win32" ? "start" : process.platform === "darwin" ? "open" : "xdg-open";
